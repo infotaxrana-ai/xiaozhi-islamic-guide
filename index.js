@@ -26,19 +26,18 @@ let prayerTimings = {};
 // Aladhan API থেকে ঢাকা/নরসিংদীর লাইভ নামাজের সময়সূচি নেওয়ার ফাংশন
 async function updatePrayerTimes() {
   try {
-    // সঠিক Aladhan API এন্ডপয়েন্ট (ঢাকা, বাংলাদেশের জন্য বর্তমান তারিখ অনুযায়ী)
     const response = await axios.get("https://api.aladhan.com/v1/timingsByCity?city=Dhaka&country=Bangladesh&method=1");
     if (response.data && response.data.data) {
       prayerTimings = response.data.data.timings;
       console.log("নামাজের সময়সূচি সফলভাবে আপডেট হয়েছে:", prayerTimings);
     }
   } catch (error) {
-    console.error("নামাজের সময়সূচি লোড করতে সমস্যা হয়েছে।");
+    console.error("নামাজের সময়সূচি লোড করতে সমস্যা হয়েছে:", error.message);
   }
 }
 
-// সার্ভার চালু হওয়ার সাথে সাথেই একবার নামাজের সময় নিয়ে নেবে
-await updatePrayerTimes();
+// সার্ভার চালু হওয়ার সময় নিরাপদে প্রথমবার ডেটা ফেচ করা
+updatePrayerTimes();
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
@@ -66,12 +65,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   // ১. নামাজের সময়সূচি জানার টুল
   if (name === "get_prayer_times") {
-    if (!prayerTimings.Fajr) await updatePrayerTimes();
+    if (!prayerTimings.Fajr) {
+      await updatePrayerTimes();
+    }
+    
+    if (!prayerTimings.Fajr) {
+      return { content: [{ type: "text", text: "দুঃখিত রানা ভাই, নেটওয়ার্ক সমস্যার কারণে এই মুহূর্তে নামাজের সময়সূচি লোড করা যায়নি।" }] };
+    }
+
     const schedule = `আজকের নামাজের সময়সূচি:\n- ফজর: ${prayerTimings.Fajr}\n- যোহর: ${prayerTimings.Dhuhr}\n- আসর: ${prayerTimings.Asr}\n- মাগরিব (ইফতার): ${prayerTimings.Maghrib}\n- ইশা: ${prayerTimings.Isha}\n- তাহাজ্জুদ/সাহরির শেষ সময়: ${prayerTimings.Imsak}`;
     return { content: [{ type: "text", text: schedule }] };
   }
 
-  // ২. এআই নিজেই কাস্টম অ্যালার্ম সেট করার টুল
+  // ২. এআই কাস্টম অ্যালার্ম সেট করার টুল
   if (name === "set_custom_alarm") {
     const alarmTime = args.alarmTime;
     const label = args.label;
@@ -88,7 +94,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   }
 });
 
-// ব্যাকগ্রাউন্ড টাইমার লুপ (প্রতি মিনিটে চেক করবে কাস্টম অ্যালার্ম বা নামাজের আজানের সময় হয়েছে কি না)
+// ব্যাকগ্রাউন্ড টাইমার লুপ (প্রতি মিনিটে চেক করবে কাস্টম অ্যালার্ম)
 setInterval(() => {
   const now = new Date();
   const currentHourMin = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
@@ -98,7 +104,6 @@ setInterval(() => {
     if (!alarm.triggered && alarm.time === currentHourMin) {
       alarm.triggered = true;
       console.log(`[ALARM TRIGGERED] রানা ভাই, আপনার অ্যালার্ম "${alarm.label}" বাজার সময় হয়ে গেছে!`);
-      // এখানে সরাসরি XiaoZhi সার্ভারের মাধ্যমে MAX98357A স্পিকারে অডিও প্লেব্যাক ট্রিগার হবে
     }
   });
 }, 60000);
